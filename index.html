@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kubernetes Taint Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+        input, select {
+            margin: 5px 0;
+            padding: 8px;
+            width: 200px;
+        }
+        button {
+            padding: 8px 12px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #nodes {
+            margin-top: 20px;
+        }
+        .node-name {
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .taints {
+            display: none;
+            margin-left: 20px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <h1>Kubernetes Taint Manager</h1>
+    <button onclick="fetchNodes()">Load Nodes</button>
+    <button onclick="removeSelectedTaints()">Remove Selected Taints</button>
+    <div id="nodes"></div>
+
+    <h2>Taint a Node</h2>
+    <form id="taintForm">
+        <label for="nodeName">Node Name:</label>
+        <input type="text" id="nodeName" required>
+        <br>
+        <label for="key">Key:</label>
+        <input type="text" id="key" required>
+        <br>
+        <label for="value">Value:</label>
+        <input type="text" id="value" required>
+        <br>
+        <label for="effect">Effect:</label>
+        <select id="effect">
+            <option value="NoSchedule">NoSchedule</option>
+            <option value="PreferNoSchedule">PreferNoSchedule</option>
+            <option value="NoExecute">NoExecute</option>
+        </select>
+        <br>
+        <button type="submit">Apply Taint</button>
+    </form>
+
+    <script>
+        async function fetchNodes() {
+            const response = await fetch('/nodes');
+            const nodes = await response.json();
+            const nodesDiv = document.getElementById('nodes');
+            nodesDiv.innerHTML = '';
+
+            nodes.forEach((node, index) => {
+                // Create the node name with a click event
+                const nodeNameDiv = document.createElement('div');
+                nodeNameDiv.classList.add('node-name');
+                nodeNameDiv.textContent = node.name;
+                nodeNameDiv.onclick = () => toggleTaintsVisibility(index);
+
+                // Create the div to hold the taints for this node
+                const taintsDiv = document.createElement('div');
+                taintsDiv.classList.add('taints');
+                taintsDiv.id = `taints-${index}`;
+
+                // Check if the node has taints
+                if (node.taints && node.taints.length > 0) {
+                    node.taints.forEach((taint, taintIndex) => {
+                        const taintDiv = document.createElement('div');
+                        taintDiv.innerHTML = `
+                            <input type="checkbox" class="taint-checkbox" 
+                                   data-node="${node.name}" data-key="${taint.key}">
+                            Key: ${taint.key}, Value: ${taint.value}, Effect: ${taint.effect}
+                        `;
+                        taintsDiv.appendChild(taintDiv);
+                    });
+                } else {
+                    // Show "N/A" if there are no taints
+                    const noTaintsDiv = document.createElement('div');
+                    noTaintsDiv.textContent = 'Taints: N/A';
+                    taintsDiv.appendChild(noTaintsDiv);
+                }
+
+                // Append the node name and taints to the main container
+                nodesDiv.appendChild(nodeNameDiv);
+                nodesDiv.appendChild(taintsDiv);
+            });
+        }
+
+        function toggleTaintsVisibility(index) {
+            const taintsDiv = document.getElementById(`taints-${index}`);
+            if (taintsDiv.style.display === 'none' || taintsDiv.style.display === '') {
+                taintsDiv.style.display = 'block';
+            } else {
+                taintsDiv.style.display = 'none';
+            }
+        }
+
+        async function removeSelectedTaints() {
+            // Gather all selected taints across all nodes
+            const checkboxes = document.querySelectorAll('.taint-checkbox');
+            const selectedTaints = [];
+
+            checkboxes.forEach(checkbox => {
+                if (checkbox.checked) {
+                    selectedTaints.push({
+                        nodeName: checkbox.getAttribute('data-node'),
+                        key: checkbox.getAttribute('data-key')
+                    });
+                }
+            });
+
+            if (selectedTaints.length === 0) {
+                alert('No taints selected for removal.');
+                return;
+            }
+
+            // Remove each selected taint
+            for (const taint of selectedTaints) {
+                await fetch('/remove-taint', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ nodeName: taint.nodeName, key: taint.key }),
+                });
+            }
+
+            alert('Selected taints removed successfully.');
+            fetchNodes(); // Refresh the node list
+        }
+
+        document.getElementById('taintForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const nodeName = document.getElementById('nodeName').value;
+            const key = document.getElementById('key').value;
+            const value = document.getElementById('value').value;
+            const effect = document.getElementById('effect').value;
+
+            const response = await fetch('/taint-node', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ nodeName, key, value, effect }),
+            });
+
+            const result = await response.text();
+            alert(result);
+            fetchNodes(); // Refresh the node list
+        });
+    </script>
+</body>
+</html>
